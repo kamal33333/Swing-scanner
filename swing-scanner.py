@@ -42,8 +42,8 @@ def send_telegram_alert(header_html, table_lines):
 
     # Send in chunks of 25 rows so Telegram's 4096-character limit is never exceeded
     chunk_size = 25
-    header_row = table_lines[0]
-    data_rows  = table_lines[1:]
+    header_row = table_lines[0] if table_lines else ""
+    data_rows  = table_lines[1:] if len(table_lines) > 1 else []
 
     if not data_rows:
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": header_html, "parse_mode": "HTML"}
@@ -53,10 +53,18 @@ def send_telegram_alert(header_html, table_lines):
     for idx in range(0, len(data_rows), chunk_size):
         chunk = [header_row] + data_rows[idx:idx + chunk_size]
         body  = "\n".join(chunk)
-        prefix = header_html + "\n\n" if idx == 0 else f"<b>🎯 5Y SWING SETUPS (Cont. {idx+1}-{min(idx+chunk_size, len(data_rows))}):</b>\n"
+        prefix = (
+            header_html + "\n\n"
+            if idx == 0
+            else f"<b>🎯 5Y SWING SETUPS (Cont. {idx+1}-{min(idx+chunk_size, len(data_rows))}):</b>\n"
+        )
         text_msg = f"{prefix}<pre>{body}</pre>"
 
-        r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text_msg, "parse_mode": "HTML"}, timeout=15)
+        r = requests.post(
+            url,
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": text_msg, "parse_mode": "HTML"},
+            timeout=15
+        )
         if r.status_code == 200:
             print(f"✅ Telegram batch {idx // chunk_size + 1} delivered successfully!")
         else:
@@ -73,14 +81,17 @@ def fetch_nifty500_tickers():
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             df = pd.read_csv(io.StringIO(response.text))
-            tickers = [f"{str(sym).strip()}.NS" for sym in df['Symbol'].dropna().tolist() if "DUMMY" not in str(sym)]
+            tickers = [
+                f"{str(sym).strip()}.NS"
+                for sym in df['Symbol'].dropna().tolist()
+                if "DUMMY" not in str(sym)
+            ]
             if len(tickers) > 100:
                 print(f"✅ Loaded {len(tickers)} Nifty 500 symbols from NSE Archive.")
                 return tickers
     except Exception as e:
         print(f"⚠️ NSE Archive CSV fallback triggered: {e}")
 
-    # Curated Fallback List if NSE Archive blocks cloud IP
     return [
         "SOLARINDS.NS", "CASTROLIND.NS", "CRISIL.NS", "PARADEEP.NS", "IDBI.NS",
         "WELCORP.NS", "GESHIP.NS", "ANANDRATHI.NS", "MTARTECH.NS", "HFCL.NS",
@@ -103,7 +114,6 @@ def add_indicators(df):
     df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
     df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
 
-    # Wilder's RSI(14) matching pandas_ta.rsi(length=14)
     delta = df['Close'].diff()
     gain  = delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
     loss  = (-delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
@@ -130,7 +140,6 @@ def calculate_historical_win_rate(df):
     ema50  = df['EMA_50'].values
     rsi    = df['RSI'].values
 
-    # Exclude the final row (today's live signal) from historical testing
     for i in range(50, len(df) - 1):
         if not in_trade:
             uptrend       = ema21[i] > ema50[i]
@@ -139,14 +148,12 @@ def calculate_historical_win_rate(df):
 
             if uptrend and pullback and bullish_close:
                 entry     = closes[i]
-                # 7-candle swing low including the entry bar (matches live .tail(7).min())
                 stop_loss = float(np.min(lows[max(0, i - 6):i + 1]))
                 risk      = entry - stop_loss
                 if risk > 0:
                     target   = entry + (risk * RR_RATIO)
                     in_trade = True
         else:
-            # Conservative check: verify Stop Loss first, then Target
             if lows[i] <= stop_loss:
                 losses  += 1
                 in_trade = False
