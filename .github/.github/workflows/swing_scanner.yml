@@ -1,4 +1,4 @@
-name: Nifty 500 5Y Swing Trading Scanner
+name: Nifty 500 5Y Swing Scanner (swing_scanner)
 
 on:
   schedule:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch: # Manual "Run workflow" button
 
 jobs:
-  scan-and-notify:
+  run-swing-scanner:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -30,4 +30,4 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python options_scanner.py
+        run: python swing_scanner.py
